@@ -1,11 +1,13 @@
 import logging
 from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from settings.db import get_db
 from models.product import Product
 from schemas.product import ProductCreate, ProductRead, ProductUpdate
+from services.pdf_generator import generate_simple_report
 
 # Налаштування логування та роутера [cite: 71, 79, 80]
 logger = logging.getLogger(__name__)
@@ -24,7 +26,20 @@ async def get_products(session: SessionDepend):
         logger.exception("Failed to get products")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get products") from exc
 
-# 2. Отримання товару за ID [cite: 103-123]
+# 2. Генерація PDF-звіту зі списком товарів (оголошено до /{product_id}, інакше "report" зловиться як id)
+@router.get("/report", summary="Generate a PDF report of all products", tags=["Products"])
+async def get_products_report(session: SessionDepend):
+    try:
+        result = await session.execute(select(Product))
+        products = result.scalars().all()
+        content_lines = [f"ID: {p.id} | {p.name} - {p.price}" for p in products]
+        file_path = generate_simple_report("products_report.pdf", "Products Report", content_lines)
+        return FileResponse(path=file_path, media_type="application/pdf", filename="products_report.pdf")
+    except Exception as exc:
+        logger.exception("Failed to generate products report")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to generate report") from exc
+
+# 3. Отримання товару за ID [cite: 103-123]
 @router.get("/{product_id}", response_model=ProductRead, tags=["Products"])
 async def get_product(product_id: int, session: SessionDepend):
     try:
@@ -39,7 +54,7 @@ async def get_product(product_id: int, session: SessionDepend):
         logger.exception("Failed to get product with id %d", product_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to get product") from exc
 
-# 3. Створення нового товару [cite: 124-144]
+# 4. Створення нового товару [cite: 124-144]
 @router.post("/", response_model=ProductRead, status_code=status.HTTP_201_CREATED, tags=["Products"])
 async def create_product(product_data: ProductCreate, session: SessionDepend):
     try:
@@ -52,7 +67,7 @@ async def create_product(product_data: ProductCreate, session: SessionDepend):
         logger.exception("Failed to create product")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create product") from exc
 
-# 4. Оновлення товару [cite: 145-174]
+# 5. Оновлення товару [cite: 145-174]
 @router.put("/{product_id}", response_model=ProductRead, tags=["Products"])
 async def update_product(product_id: int, product_update: ProductUpdate, session: SessionDepend):
     try:
@@ -74,7 +89,7 @@ async def update_product(product_id: int, product_update: ProductUpdate, session
         logger.exception("Failed to update product with id %d", product_id)
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to update product") from exc
 
-# 5. Видалення товару [cite: 175-197]
+# 6. Видалення товару [cite: 175-197]
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Products"])
 async def delete_product(product_id: int, session: SessionDepend):
     try:
