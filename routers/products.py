@@ -10,7 +10,7 @@ from models.product import Product
 from models.user import User
 from schemas.product import ProductCreate, ProductRead, ProductUpdate
 from services.pdf_generator import generate_simple_report
-from utils.security import security
+from utils.security import require_token
 
 # Налаштування логування та роутера [cite: 71, 79, 80]
 logger = logging.getLogger(__name__)
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/products", tags=["Products"])
 SessionDepend = Annotated[AsyncSession, Depends(get_db)]
 
 # Залежність: доступ лише для адміністратора
-async def require_admin(token: Annotated[RequestToken, Depends(security.access_token_required)], session: SessionDepend) -> User:
+async def require_admin(token: Annotated[RequestToken, Depends(require_token)], session: SessionDepend) -> User:
     result = await session.execute(select(User).where(User.id == int(token.sub)))
     user = result.scalars().first()
     if not user or user.role != "admin":
@@ -67,7 +67,7 @@ async def get_product(product_id: int, session: SessionDepend):
 
 # 4. Створення нового товару [cite: 124-144]
 @router.post("/", response_model=ProductRead, status_code=status.HTTP_201_CREATED, tags=["Products"])
-async def create_product(product_data: ProductCreate, session: SessionDepend, token: Annotated[RequestToken, Depends(security.access_token_required)]):
+async def create_product(product_data: ProductCreate, session: SessionDepend, token: Annotated[RequestToken, Depends(require_token)]):
     try:
         new_product = Product(**product_data.model_dump())
         session.add(new_product)

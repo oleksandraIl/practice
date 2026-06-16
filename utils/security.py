@@ -1,4 +1,7 @@
-from authx import AuthX, AuthXConfig
+from typing import Annotated
+from fastapi import Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from authx import AuthX, AuthXConfig, RequestToken
 from passlib.context import CryptContext
 
 config = AuthXConfig()
@@ -7,6 +10,16 @@ config.JWT_ACCESS_COOKIE_NAME = "my_access_token"
 config.JWT_TOKEN_LOCATION = ["headers"]
 
 security = AuthX(config=config)
+
+# Схема для Swagger: показує кнопку Authorize і надсилає токен у заголовку
+bearer_scheme = HTTPBearer(auto_error=False)
+
+# Залежність: вимагає валідний токен (через bearer_scheme Swagger надсилає заголовок)
+async def require_token(
+    _: Annotated[HTTPAuthorizationCredentials, Depends(bearer_scheme)],
+    token: Annotated[RequestToken, Depends(security.access_token_required)],
+) -> RequestToken:
+    return token
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
