@@ -4,10 +4,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from authx import RequestToken
 from settings.db import get_db
 from models.product import Product
+from models.user import User
 from schemas.product import ProductCreate, ProductRead, ProductUpdate
 from services.pdf_generator import generate_simple_report
+from utils.security import security
 
 # Налаштування логування та роутера [cite: 71, 79, 80]
 logger = logging.getLogger(__name__)
@@ -15,6 +18,14 @@ router = APIRouter(prefix="/products", tags=["Products"])
 
 # Залежність для роботи з БД [cite: 81, 82]
 SessionDepend = Annotated[AsyncSession, Depends(get_db)]
+
+# Залежність: доступ лише для адміністратора
+async def require_admin(token: Annotated[RequestToken, Depends(security.access_token_required)], session: SessionDepend) -> User:
+    result = await session.execute(select(User).where(User.id == int(token.sub)))
+    user = result.scalars().first()
+    if not user or user.role != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required")
+    return user
 
 # 1. Отримання списку товарів [cite: 86-102]
 @router.get("/", response_model=list[ProductRead], tags=["Products"])
@@ -56,7 +67,7 @@ async def get_product(product_id: int, session: SessionDepend):
 
 # 4. Створення нового товару [cite: 124-144]
 @router.post("/", response_model=ProductRead, status_code=status.HTTP_201_CREATED, tags=["Products"])
-async def create_product(product_data: ProductCreate, session: SessionDepend):
+async def create_product(product_data: ProductCreate, session: SessionDepend, token: Annotated[RequestToken, Depends(security.access_token_required)]):
     try:
         new_product = Product(**product_data.model_dump())
         session.add(new_product)
@@ -91,7 +102,7 @@ async def update_product(product_id: int, product_update: ProductUpdate, session
 
 # 6. Видалення товару [cite: 175-197]
 @router.delete("/{product_id}", status_code=status.HTTP_204_NO_CONTENT, tags=["Products"])
-async def delete_product(product_id: int, session: SessionDepend):
+async def delete_product(product_id: int, session: SessionDepend, admin: Annotated[User, Depends(require_admin)]):
     try:
         result = await session.execute(select(Product).where(Product.id == product_id))
         existing_product = result.scalars().first()
